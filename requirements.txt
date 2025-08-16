@@ -1,0 +1,8 @@
+# Server
+fastapi
+uvicorn[standard]
+pydantic
+
+# AI Core
+langchain
+llama-cpp-python==0.3.16

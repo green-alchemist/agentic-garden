@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+.venv/
+
+# IDE / Editor specific
+.vscode/
+.idea/
+
+# Large Model Files
+# Ignore all files in the models directory...
+models/*
+# ...but NOT the .gitkeep file. This lets us commit the empty folder.
+!models/.gitkeep
+
+# Other
+*.env
+.DS_Store
+
+
+**.deb

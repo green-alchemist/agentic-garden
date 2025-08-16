@@ -1,0 +1,22 @@
+# docker-compose.yml (Corrected)
+version: '3.8'
+
+services:
+  agentic-server:
+    build: .
+    image: agentic-garden
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - MODEL_NAME=${MODEL_NAME}
+      # THIS IS THE FIX: Tell Python where to find your code
+      - PYTHONPATH=/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

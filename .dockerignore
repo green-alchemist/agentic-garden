@@ -1,0 +1,16 @@
+# Ignore the Dockerfile itself and context files
+Dockerfile
+.dockerignore
+
+# Ignore Git repository
+.git/
+.gitignore
+
+# Ignore Python virtual environment
+.venv/
+
+# Ignore Python cache
+__pycache__/
+
+# MOST IMPORTANT: Ignore the large model files
+models/
