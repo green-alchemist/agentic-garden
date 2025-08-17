@@ -2,7 +2,13 @@
 fastapi
 uvicorn[standard]
 pydantic
+pydantic-settings
 
 # AI Core
 langchain
 llama-cpp-python==0.3.16
+
+# Agent Layer
+langgraph
+langchain
+requests

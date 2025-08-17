@@ -1,5 +1,4 @@
-# docker-compose.yml (Corrected)
-version: '3.8'
+# docker-compose.yml
 
 services:
   agentic-server:
@@ -9,10 +8,11 @@ services:
       - "8000:8000"
     volumes:
       - ./models:/app/models
+      - ./src:/app/src
     environment:
       - MODEL_NAME=${MODEL_NAME}
-      # THIS IS THE FIX: Tell Python where to find your code
       - PYTHONPATH=/app
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
     deploy:
       resources:
         reservations:
@@ -20,3 +20,20 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  coding-agent:
+    # We use the same image we already built for the server
+    image: agentic-garden
+    # This ensures the agent only starts after the server is healthy
+    depends_on:
+      - agentic-server
+    # Override the default command to run our agent script
+    # The 'tty: true' and 'stdin_open: true' keep the container running
+    # and allow us to attach an interactive terminal.
+    command: tail -f /dev/null
+    volumes:
+      - ./src:/app/src
+    environment:
+      - PYTHONPATH=/app
+    # We don't need a GPU for the agent logic
+    deploy: {}
