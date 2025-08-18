@@ -12,3 +12,4 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     stream: bool = False
+

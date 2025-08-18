@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 # --- Local Imports ---
 from .inference import model_manager
 from .schemas import ChatRequest
+from . import llm_router
 
 # --- FastAPI Application Setup ---
 app = FastAPI(
@@ -53,3 +54,5 @@ def chat_completions(request: ChatRequest):
     except Exception as e:
         print(f"❌ An error occurred: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+
