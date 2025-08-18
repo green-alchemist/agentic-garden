@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  inference_server:
+    build:
+      context: ./services/inference_server
+    image: agentic-garden/inference-server
+    volumes:
+      - ./models:/app/models
+    environment:
+      - MODEL_NAME=${MODEL_NAME}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  gsheets_server:
+    build:
+      context: ./services/gsheets_server
+    image: agentic-garden/gsheets-server
+    ports:
+      - "8082:8000" # Expose the gsheets tool on your local machine
+    volumes:
+      - ./secrets:/app/secrets
+
+  cli_agent:
+    build:
+      context: ./clients/cli_agent
+    image: agentic-garden/cli-agent
+    depends_on:
+      - inference_server
+      - gsheets_server
+    command: tail -f /dev/null # Keep container running for exec
+    volumes:
+      - ./clients/cli_agent/src:/app/src
+    environment:
+      - INFERENCE_API_URL=http://inference_server:8000/v1/chat/completions
+      - GSHEETS_API_URL=http://gsheets_server:8000

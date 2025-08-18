@@ -39,8 +39,8 @@ WORKDIR /app
 
 # --- OPTIMIZATION ---
 # Copy the rest of the application code after dependencies are installed
-COPY . .
+COPY src/ ./src
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

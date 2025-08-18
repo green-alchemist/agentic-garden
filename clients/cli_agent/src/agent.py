@@ -1,4 +1,5 @@
 # src/agents/coding_assistant.py
+import os
 import requests
 import json
 from typing import TypedDict, List, Optional
@@ -13,7 +14,7 @@ class AgentState(TypedDict):
 
 def call_model(state: AgentState):
     """Calls the inference server for a single, non-streaming response."""
-    url = "http://agentic-server:8000/v1/chat/completions"
+    url = os.getenv("INFERENCE_API_URL", "http://inference-engine:8000/v1/chat/completions")
     
     # Prepare the payload by extracting relevant keys from the state
     payload = {

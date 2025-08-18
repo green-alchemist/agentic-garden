@@ -6,7 +6,6 @@ from fastapi.responses import StreamingResponse, JSONResponse
 # --- Local Imports ---
 from .inference import model_manager
 from .schemas import ChatRequest
-from . import llm_router
 
 # --- FastAPI Application Setup ---
 app = FastAPI(

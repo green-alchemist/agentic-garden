@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+pydantic
+mcp[cli]
+gspread
+oauth2client
