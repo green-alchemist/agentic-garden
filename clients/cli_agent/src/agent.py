@@ -1,42 +1,43 @@
-# src/agents/coding_assistant.py
+# clients/cli_agent/src/agent.py
 import os
-import requests
-import json
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
 
-# This is the single, correct state for our graph.
-# It defines all the data that can be passed between nodes.
+from .mcp_client import MCPClient
+
+# --- FIX: Update the server URLs to include the /mcp path ---
+inference_client = MCPClient(server_url="http://inference_server:8000/mcp")
+# gsheets_client = MCPClient(server_url="http://gsheets_server:8000/mcp")
+
+# --- Define the Agent's State ---
 class AgentState(TypedDict):
-    messages: List[dict]
-    temperature: Optional[float]
-    generation: str
+    messages: List[BaseMessage]
 
-def call_model(state: AgentState):
-    """Calls the inference server for a single, non-streaming response."""
-    url = os.getenv("INFERENCE_API_URL", "http://inference-engine:8000/v1/chat/completions")
+# --- Define the Agent's Nodes (Actions) ---
+def call_inference_model(state: AgentState):
+    """The 'brain' of the agent. Decides what to do next."""
+    print("🧠 Thinking...")
     
-    # Prepare the payload by extracting relevant keys from the state
-    payload = {
-        "messages": state['messages'],
-        "temperature": state.get('temperature', 0.1), # Default to 0.1 if not provided
-        "stream": False
-    }
+    messages_for_api = [{"role": msg.type, "content": msg.content} for msg in state['messages']]
+    
+    response = inference_client.call_tool(
+        "create_chat_completion",
+        messages=messages_for_api,
+        temperature=0.1
+    )
+    
+    ai_message_content = "Error: Could not parse response from model."
+    if isinstance(response, dict):
+        ai_message_content = response.get("choices", [{}])[0].get("message", {}).get("content", ai_message_content)
 
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        generation = data['choices'][0]['message']['content']
-        # The node only needs to return the part of the state it changed
-        return {"generation": generation}
+    ai_message = AIMessage(content=ai_message_content)
+    
+    return {"messages": state['messages'] + [ai_message]}
 
-    except requests.exceptions.RequestException as e:
-        return {"generation": f"\n[ERROR] API call failed: {e}\n"}
-
-# The StateGraph must be initialized with the complete AgentState
+# --- Build the Graph ---
 workflow = StateGraph(AgentState)
-workflow.add_node("llm", call_model)
+workflow.add_node("llm", call_inference_model)
 workflow.set_entry_point("llm")
 workflow.add_edge("llm", END)
 agent_app = workflow.compile()

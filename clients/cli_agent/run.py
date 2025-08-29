@@ -1,5 +1,5 @@
-# run_agent.py
-from src.agents.coding_assistant import agent_app
+# clients/cli_agent/run.py
+from src.agent import agent_app # <-- This is the corrected import path
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from typing import List
 
@@ -16,21 +16,20 @@ def main():
         
         messages.append(HumanMessage(content=question))
         
-        simple_messages = [{"role": msg.type, "content": msg.content} for msg in messages]
-        
-        inputs = {
-            "messages": simple_messages,
-            "temperature": 0.1
-        }
-        # print(f"\n[CLIENT] Calling agent with inputs: {inputs}")
+        # The agent's internal state now manages the message format
+        inputs = {"messages": messages}
         
         response = agent_app.invoke(inputs)
-        
-        # print(f"[CLIENT] Received response from agent: {response}")
 
-        if generation := response.get("generation"):
-            print(f"Assistant: {generation}")
-            messages.append(AIMessage(content=generation))
+        if "messages" in response:
+            # Get the last message in the list, which is the AI's response
+            ai_response = response["messages"][-1]
+            if isinstance(ai_response, AIMessage):
+                print(f"Assistant: {ai_response.content}")
+                # The returned state is the new, complete history
+                messages = response["messages"]
+            else:
+                 print("Assistant: I'm sorry, I encountered an error parsing the response.")
         else:
             print("Assistant: I'm sorry, I encountered an error.")
 

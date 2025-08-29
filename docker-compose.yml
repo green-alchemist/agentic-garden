@@ -6,9 +6,11 @@ services:
       context: ./services/inference_server
     image: agentic-garden/inference-server
     volumes:
-      - ./models:/app/models
+      - ./services/inference_server/models:/app/models
+      - ./services/inference_server/src:/app/src
     environment:
       - MODEL_NAME=${MODEL_NAME}
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
     deploy:
       resources:
         reservations:
@@ -22,9 +24,11 @@ services:
       context: ./services/gsheets_server
     image: agentic-garden/gsheets-server
     ports:
-      - "8082:8000" # Expose the gsheets tool on your local machine
+      - "8082:8000"
     volumes:
       - ./secrets:/app/secrets
+      - ./services/gsheets_server/src:/app/src
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   cli_agent:
     build:
@@ -33,7 +37,7 @@ services:
     depends_on:
       - inference_server
       - gsheets_server
-    command: tail -f /dev/null # Keep container running for exec
+    command: tail -f /dev/null
     volumes:
       - ./clients/cli_agent/src:/app/src
     environment:

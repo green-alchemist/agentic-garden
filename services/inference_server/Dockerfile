@@ -39,8 +39,11 @@ WORKDIR /app
 
 # --- OPTIMIZATION ---
 # Copy the rest of the application code after dependencies are installed
-COPY src/ ./src
+# ... (rest of the Dockerfile is the same) ...
+
+COPY src/ .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --- FIX: Point Uvicorn to the 'mcp' object in main.py ---
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
