@@ -10,41 +10,63 @@ class MCPClient:
         if not server_url.startswith("http"):
             raise ValueError("Server URL must include http:// or https://")
         self.server_url = server_url.rstrip('/')
-        self.tools = self._discover_tools()
+        self.tools = {}
+        self.tool_schemas = {}
+        self._discover_tools()
 
-    def _discover_tools(self) -> Dict[str, Any]:
-        """Fetch the list of available tools from the server's OpenAPI spec."""
-        url = f"{self.server_url}/openapi.json"
+    def _discover_tools(self) -> None:
+        """
+        Fetch the list of available tools from the server's OpenAPI spec
+        with a retry mechanism.
+        """
         for i in range(5):
             try:
-                response = requests.get(url)
+                response = requests.get(f"{self.server_url}/openapi.json")
                 response.raise_for_status()
                 schema = response.json()
                 
-                paths = schema.get("paths", {})
-                
-                # --- DIAGNOSTIC STEP: Print all discovered paths ---
-                print(f"🕵️  Discovered API paths on {self.server_url}: {list(paths.keys())}")
-                
-                tool_schemas = {}
-                for path, methods in paths.items():
-                    # Standard MCP convention: tools are at /tools/{tool_name}
+                print(f"🕵️  Discovered API paths on {self.server_url}: {list(schema.get('paths', {}).keys())}")
+
+                for path, methods in schema.get("paths", {}).items():
                     if path.startswith("/tools/"):
-                        # Extract the final part of the path as the tool name
                         tool_name = path.split("/")[-1]
-                        description = methods.get("post", {}).get("description", "No description.")
-                        tool_schemas[tool_name] = {"description": description}
+                        post_method = methods.get("post", {})
+                        
+                        self.tools[tool_name] = post_method
+                        
+                        # Generate the schema for the LLM
+                        request_body = post_method.get("requestBody", {})
+                        schema_ref = request_body.get("content", {}).get("application/json", {}).get("schema", {})
+                        
+                        # Follow the $ref to get the actual schema if it exists
+                        if "$ref" in schema_ref:
+                            ref_path = schema_ref["$ref"].split('/')[1:] # e.g., ['components', 'schemas', 'MyModel']
+                            component_schema = schema
+                            for part in ref_path:
+                                component_schema = component_schema.get(part, {})
+                            parameters = component_schema
+                        else:
+                            parameters = {}
 
-                print(f"✅ Discovered tools on {self.server_url}: {list(tool_schemas.keys())}")
-                return tool_schemas
+                        self.tool_schemas[tool_name] = {
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "description": post_method.get("summary") or post_method.get("description", "No description."),
+                                "parameters": parameters
+                            }
+                        }
 
+                print(f"✅ Discovered tools on {self.server_url}: {list(self.tools.keys())}")
+                return
             except requests.exceptions.RequestException as e:
                 print(f"⏳ Attempt {i+1}/5 failed for {self.server_url}: {e}. Retrying in 2s...")
                 time.sleep(2)
-        
         print(f"❌ Error discovering tools on {self.server_url} after 5 attempts.")
-        return {}
 
+    def get_tool_schemas(self) -> List[Dict[str, Any]]:
+        """Returns the list of tool schemas for the LLM."""
+        return list(self.tool_schemas.values())
 
     def call_tool(self, tool_name: str, **kwargs) -> Any:
         """Call a specific tool on the MCP server with the given arguments."""
@@ -52,11 +74,11 @@ class MCPClient:
             return f"Error: Tool '{tool_name}' not found on server {self.server_url}."
         
         try:
-            # MCP convention is that tools are exposed at /tools/{tool_name}
             tool_url = f"{self.server_url}/tools/{tool_name}"
             response = requests.post(tool_url, json=kwargs)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
+            # Return the full error for better debugging
             return f"Error calling tool '{tool_name}': {e}"
 
