@@ -1,43 +1,133 @@
 # clients/cli_agent/src/agent.py
-import os
-from typing import TypedDict, List
+import json
+import uuid
+from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, ToolMessage
 
-from .mcp_client import MCPClient
+from .tool_executor import ToolExecutor
 
-# --- FIX: Update the server URLs to include the /mcp path ---
-inference_client = MCPClient(server_url="http://inference_server:8000/mcp")
-# gsheets_client = MCPClient(server_url="http://gsheets_server:8000/mcp")
+# --- Initialize the Tool Executor ---
+# This will automatically discover tools from all connected MCP servers.
+tool_executor = ToolExecutor()
 
 # --- Define the Agent's State ---
 class AgentState(TypedDict):
     messages: List[BaseMessage]
 
-# --- Define the Agent's Nodes (Actions) ---
-def call_inference_model(state: AgentState):
-    """The 'brain' of the agent. Decides what to do next."""
-    print("🧠 Thinking...")
+# --- Helper function for role mapping ---
+def map_message_to_api(message: BaseMessage) -> Dict[str, Any]:
+    role_map = {"human": "user", "ai": "assistant", "tool": "tool"}
+    role = role_map.get(message.type, "user")
     
-    messages_for_api = [{"role": msg.type, "content": msg.content} for msg in state['messages']]
+    # --- This mapping logic remains the same ---
+    if isinstance(message, AIMessage):
+        data = {"role": role, "content": message.content or None}
+        if message.tool_calls:
+            transformed_tool_calls = []
+            for tc in message.tool_calls:
+                transformed_tool_calls.append({
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc["args"])
+                    }
+                })
+            data["tool_calls"] = transformed_tool_calls
+        return data
     
-    response = inference_client.call_tool(
-        "create_chat_completion",
-        messages=messages_for_api,
-        temperature=0.1
-    )
-    
-    ai_message_content = "Error: Could not parse response from model."
-    if isinstance(response, dict):
-        ai_message_content = response.get("choices", [{}])[0].get("message", {}).get("content", ai_message_content)
+    if isinstance(message, ToolMessage):
+        return {
+            "role": role,
+            "content": message.content,
+            "tool_call_id": message.tool_call_id
+        }
 
-    ai_message = AIMessage(content=ai_message_content)
+    return {"role": role, "content": message.content}
+
+# --- Agent's Nodes (Actions) ---
+
+def call_inference_model(state: AgentState):
+    print("🧠 Thinking...")
+    messages_for_api = [map_message_to_api(msg) for msg in state['messages']]
     
+    last_message = state['messages'][-1]
+    should_send_tools = not isinstance(last_message, ToolMessage)
+
+    kwargs = {
+        "messages": messages_for_api,
+        "temperature": 0,
+    }
+    if should_send_tools:
+        # Dynamically get the tools from our executor
+        kwargs["tools"] = tool_executor.get_tools_for_llm()
+        kwargs["tool_choice"] = "auto"
+
+    response = tool_executor.inference_client.call_tool("create_chat_completion", **kwargs)
+    
+    if isinstance(response, str):
+        print(f"Error from server: {response}")
+        ai_message = AIMessage(content="I'm sorry, I encountered an error. Please check the logs.")
+    else:
+        response_data = response.get("choices", [{}])[0].get("message", {})
+        
+        if response_data.get("tool_calls"):
+            ai_message = AIMessage(content="", tool_calls=response_data["tool_calls"])
+        else:
+            ai_message = AIMessage(**response_data)
+        
+        if not ai_message.tool_calls and isinstance(ai_message.content, str):
+            try:
+                potential_call = ai_message.content.strip().split(';')[0]
+                tool_call_data = json.loads(potential_call.strip())
+                if "name" in tool_call_data and "parameters" in tool_call_data:
+                    params = tool_call_data["parameters"]
+                    if isinstance(params, str):
+                        params = json.loads(params)
+                    
+                    parsed_tool_call = {
+                        "name": tool_call_data["name"],
+                        "args": params,
+                        "id": f"call_{uuid.uuid4()}"
+                    }
+                    print("📝 Manually parsing tool call from content...")
+                    ai_message = AIMessage(content="", tool_calls=[parsed_tool_call])
+            except (json.JSONDecodeError, TypeError, IndexError):
+                pass
+
     return {"messages": state['messages'] + [ai_message]}
 
+def call_tool(state: AgentState):
+    """This node is now a simple wrapper around the ToolExecutor."""
+    last_message = state['messages'][-1]
+    
+    if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
+        return {"messages": state['messages']}
+
+    tool_call = last_message.tool_calls[0]
+    tool_message = tool_executor.execute_tool(tool_call)
+    return {"messages": state['messages'] + [tool_message]}
+
+
+# --- Conditional Edge ---
+def should_continue(state: AgentState):
+    last_message = state['messages'][-1]
+    if isinstance(last_message, AIMessage) and last_message.tool_calls:
+        return "tools"
+    return "end"
+
 # --- Build the Graph ---
+# The graph structure remains the same, but the nodes are simpler.
 workflow = StateGraph(AgentState)
 workflow.add_node("llm", call_inference_model)
+workflow.add_node("tools", call_tool)
 workflow.set_entry_point("llm")
-workflow.add_edge("llm", END)
+workflow.add_conditional_edges(
+    "llm",
+    should_continue,
+    {"tools": "tools", "end": END},
+)
+workflow.add_edge("tools", "llm")
 agent_app = workflow.compile()
+

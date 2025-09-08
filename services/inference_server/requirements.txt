@@ -1,5 +1,6 @@
 # Server
 fastapi
+fastmcp
 uvicorn[standard]
 pydantic
 pydantic-settings
