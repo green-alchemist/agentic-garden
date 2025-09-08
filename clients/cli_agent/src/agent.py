@@ -6,9 +6,9 @@ from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
 
 from .mcp_client import MCPClient
 
-# --- Connect to our MCP servers ---
-inference_client = MCPClient(server_url="http://inference_server:8000/mcp")
-calculator_client = MCPClient(server_url="http://calculator_server:8000/mcp")
+# --- FIX: Connect to the server root to find the openapi.json file ---
+inference_client = MCPClient(server_url="http://inference_server:8000")
+calculator_client = MCPClient(server_url="http://calculator_server:8000")
 
 
 # --- Define the Agent's State ---
@@ -22,6 +22,7 @@ def call_inference_model(state: AgentState):
     
     messages_for_api = [{"role": msg.type, "content": msg.content} for msg in state['messages']]
     
+    # The tool name is now just the function name, as defined by @mcp.tool
     response = inference_client.call_tool(
         "create_chat_completion",
         messages=messages_for_api,
@@ -42,3 +43,4 @@ workflow.add_node("llm", call_inference_model)
 workflow.set_entry_point("llm")
 workflow.add_edge("llm", END)
 agent_app = workflow.compile()
+

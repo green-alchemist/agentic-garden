@@ -1,15 +1,19 @@
 # src/main.py
 from typing import List, Optional
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 # --- Local Imports ---
 from .inference import model_manager
 
-# --- 1. Create the FastMCP instance to define tools ---
-mcp = FastMCP("inference")
+# 1. Create a base FastAPI app.
+base_app = FastAPI(title="Agentic Garden Inference Server")
 
-# --- 2. Define the Chat Completion Tool on the MCP instance ---
+# 2. Use FastMCP to CONFIGURE the base app.
+# This modifies base_app in-place, adding the MCP routes to it.
+mcp = FastMCP.from_fastapi(app=base_app)
+
+# 3. Define our custom tools on the generated MCP instance.
 @mcp.tool()
 def create_chat_completion(
     messages: List[dict],
@@ -23,11 +27,6 @@ def create_chat_completion(
     )
     return {"choices": [{"message": {"role": "assistant", "content": response_text.strip()}}]}
 
-# --- 3. FIX: Directly use the app from the FastMCP instance ---
-# This is a more direct and robust way to expose the MCP server.
-app = mcp.app
+# 4. Expose the original, now-modified, base_app for Uvicorn to run.
+app = base_app
 
-# --- 4. Optional: Add a root health check to the main app ---
-@app.get("/")
-def read_root():
-    return {"status": "ok", "service": "inference_server"}

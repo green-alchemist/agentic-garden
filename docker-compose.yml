@@ -25,7 +25,6 @@ services:
       - "8082:8000"
     volumes:
       - ./services/calculator_server/src:/app/src
-    # FIX: Corrected the command to point to the module within the 'src' directory.
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
   cli_agent:
@@ -38,4 +37,7 @@ services:
     command: tail -f /dev/null
     volumes:
       - ./clients/cli_agent/src:/app/src
+    environment:
+      - INFERENCE_API_URL=http://inference_server:8000/
+      - CALCULATOR_API_URL=http://calculator_server:8000
 

@@ -18,8 +18,6 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV CMAKE_ARGS="-DGGML_CUDA=on"
 ENV FORCE_CMAKE=1
 
-# --- OPTIMIZATION ---
-# Copy only the requirements file first to leverage caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -36,14 +34,9 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
-
-# --- OPTIMIZATION ---
-# Copy the rest of the application code after dependencies are installed
-# ... (rest of the Dockerfile is the same) ...
-
 COPY src/ .
 
 EXPOSE 8000
 
 # --- FIX: Point Uvicorn to the 'mcp' object in main.py ---
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:mcp", "--host", "0.0.0.0", "--port", "8000"]

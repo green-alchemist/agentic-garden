@@ -2,4 +2,4 @@ langchain
 langgraph
 requests
 langchain-core
-mcp[cli] # Add MCP for tool use
+fastmcp # Add MCP for tool use
