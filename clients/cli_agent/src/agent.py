@@ -4,8 +4,7 @@ import json
 import uuid
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
-# THE FIX: ToolMessage is no longer needed
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, ToolMessage
 
 from .mcp_client import MCPClient
 
@@ -18,7 +17,6 @@ class AgentState(TypedDict):
     messages: List[BaseMessage]
 
 # --- Define the Tools for the LLM ---
-# This is the JSON schema the model will see.
 tools = [
     {
         "type": "function",
@@ -27,10 +25,7 @@ tools = [
             "description": "Adds two numbers together.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "a": {"type": "number"},
-                    "b": {"type": "number"}
-                },
+                "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
                 "required": ["a", "b"],
             },
         },
@@ -42,10 +37,7 @@ tools = [
             "description": "Subtracts the second number from the first.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "a": {"type": "number"},
-                    "b": {"type": "number"}
-                },
+                "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
                 "required": ["a", "b"],
             },
         },
@@ -54,41 +46,53 @@ tools = [
 
 # --- Helper function for role mapping ---
 def map_message_to_api(message: BaseMessage) -> Dict[str, Any]:
-    """Maps a LangChain message to the format expected by the LLM API."""
-    role_map = {
-        "human": "user",
-        "ai": "assistant",
-        # "tool" role is no longer used
-    }
+    role_map = {"human": "user", "ai": "assistant", "tool": "tool"}
     role = role_map.get(message.type, "user")
     
-    # Handle AIMessage with tool_calls specifically
-    if isinstance(message, AIMessage) and message.tool_calls:
-        return {
-            "role": role, 
-            "content": message.content or "",
-            "tool_calls": message.tool_calls
-        }
+    if isinstance(message, AIMessage):
+        data = {"role": role, "content": message.content or None}
+        if message.tool_calls:
+            # THE FIX: Transform LangChain's tool_calls format to the one expected by llama-cpp-python.
+            transformed_tool_calls = []
+            for tc in message.tool_calls:
+                transformed_tool_calls.append({
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc["args"]) # Arguments must be a JSON string
+                    }
+                })
+            data["tool_calls"] = transformed_tool_calls
+        return data
     
-    # Default for HumanMessage, standard AIMessage, and our new tool result message
+    if isinstance(message, ToolMessage):
+        return {
+            "role": role,
+            "content": message.content,
+            "tool_call_id": message.tool_call_id
+        }
+
     return {"role": role, "content": message.content}
 
-
-# --- Define the Agent's Nodes (Actions) ---
+# --- Agent's Nodes (Actions) ---
 
 def call_inference_model(state: AgentState):
-    """The 'brain' of the agent. Decides what to do next."""
     print("🧠 Thinking...")
-    
     messages_for_api = [map_message_to_api(msg) for msg in state['messages']]
     
-    response = inference_client.call_tool(
-        "create_chat_completion",
-        messages=messages_for_api,
-        temperature=0,
-        tools=tools,
-        tool_choice="auto"
-    )
+    last_message = state['messages'][-1]
+    should_send_tools = not isinstance(last_message, ToolMessage)
+
+    kwargs = {
+        "messages": messages_for_api,
+        "temperature": 0,
+    }
+    if should_send_tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
+
+    response = inference_client.call_tool("create_chat_completion", **kwargs)
     
     if isinstance(response, str):
         print(f"Error from server: {response}")
@@ -116,7 +120,6 @@ def call_inference_model(state: AgentState):
     return {"messages": state['messages'] + [ai_message]}
 
 def call_tool(state: AgentState):
-    """Executes a tool call requested by the LLM."""
     last_message = state['messages'][-1]
     
     if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
@@ -140,18 +143,12 @@ def call_tool(state: AgentState):
     else:
         result = f"Error: Tool '{tool_name}' not found."
 
-    # THE FIX: Instead of a ToolMessage, create a HumanMessage with the result.
-    # This is a more robust way to feed information back to the LLM.
-    result_message = HumanMessage(
-        content=f"The result of calling the '{tool_name}' tool is: {result}"
-    )
-    return {"messages": state['messages'] + [result_message]}
+    tool_message = ToolMessage(content=str(result), tool_call_id=tool_call['id'])
+    return {"messages": state['messages'] + [tool_message]}
 
-
-# --- Define the Conditional Edge ---
+# --- Conditional Edge ---
 
 def should_continue(state: AgentState):
-    """Decides whether to continue the loop or end."""
     last_message = state['messages'][-1]
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "tools"
@@ -159,22 +156,14 @@ def should_continue(state: AgentState):
 
 # --- Build the Graph ---
 workflow = StateGraph(AgentState)
-
 workflow.add_node("llm", call_inference_model)
 workflow.add_node("tools", call_tool)
-
 workflow.set_entry_point("llm")
-
 workflow.add_conditional_edges(
     "llm",
     should_continue,
-    {
-        "tools": "tools",
-        "end": END,
-    },
+    {"tools": "tools", "end": END},
 )
-
 workflow.add_edge("tools", "llm")
-
 agent_app = workflow.compile()
 
