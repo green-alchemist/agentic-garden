@@ -6,9 +6,10 @@ from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
 
 from .mcp_client import MCPClient
 
-# --- FIX: Update the server URLs to include the /mcp path ---
+# --- Connect to our MCP servers ---
 inference_client = MCPClient(server_url="http://inference_server:8000/mcp")
-# gsheets_client = MCPClient(server_url="http://gsheets_server:8000/mcp")
+calculator_client = MCPClient(server_url="http://calculator_server:8000/mcp")
+
 
 # --- Define the Agent's State ---
 class AgentState(TypedDict):
