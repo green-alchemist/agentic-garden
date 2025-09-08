@@ -5,7 +5,7 @@ import os
 MODELS_CONFIG = {
     "chatml": { 
         "load_params": {"n_ctx": 4096}, 
-        "generation_params": {"temperature": 0.1} # Default creative temperature
+        "generation_params": {"temperature": 0.1}
     },
     "default": { 
         "load_params": {"n_ctx": 4096}, 
@@ -59,23 +59,20 @@ class ModelManager:
 
     def _prepare_generation_kwargs(self, **kwargs) -> dict:
         """Merges default model params with incoming API params."""
-        # Start with the model's default generation parameters
         final_kwargs = self.config.get("generation_params", {}).copy()
-        
-        # ** THE FIX IS HERE: Update defaults with API values **
-        # This ensures 'temperature': 0.1 from the API call overwrites any default.
         final_kwargs.update(kwargs)
         
         print(f"⚙️ Applying generation parameters: {final_kwargs}")
         return final_kwargs
 
-    def generate_chat_completion(self, messages: list, **kwargs) -> str:
+    def generate_chat_completion(self, messages: list, **kwargs) -> dict:
         """Generates a non-streaming chat completion."""
         final_kwargs = self._prepare_generation_kwargs(**kwargs)
         output = self.llm.create_chat_completion(
             messages=messages, stream=False, **final_kwargs
         )
-        return output['choices'][0]['message']['content']
+        # THE FIX: Always return the full message dictionary. This simplifies the logic.
+        return output['choices'][0]['message']
 
     def generate_chat_completion_stream(self, messages: list, **kwargs):
         """Generates a streaming chat completion."""
@@ -88,3 +85,4 @@ class ModelManager:
                 yield content
 
 model_manager = ModelManager()
+
