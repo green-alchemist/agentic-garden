@@ -100,38 +100,32 @@ def call_inference_model(state: AgentState):
     else:
         response_data = response.get("choices", [{}])[0].get("message", {})
         
-        # When a tool call is present, create a clean AIMessage with no content.
-        # This prevents the raw JSON tool call from polluting the chat history.
         if response_data.get("tool_calls"):
             ai_message = AIMessage(content="", tool_calls=response_data["tool_calls"])
         else:
-            # This is a regular message
             ai_message = AIMessage(**response_data)
         
-        # This block is still needed for models that put the tool call in the content field
+        # This block handles models that output a single tool call as text
         if not ai_message.tool_calls and isinstance(ai_message.content, str):
             try:
-                tool_call_data = json.loads(ai_message.content)
+                # THE FIX: Only attempt to parse the first potential JSON object
+                potential_call = ai_message.content.strip().split(';')[0]
+                tool_call_data = json.loads(potential_call.strip())
                 if "name" in tool_call_data and "parameters" in tool_call_data:
-                    print("📝 Manually parsing tool call from content...")
-                    
-                    # Ensure the 'parameters' (which become 'args') is a dictionary.
-                    # Some models return it as a string, so we parse it if needed.
                     params = tool_call_data["parameters"]
                     if isinstance(params, str):
                         params = json.loads(params)
-
-                    ai_message = AIMessage(
-                        content="", 
-                        tool_calls=[{
-                            "name": tool_call_data["name"],
-                            "args": params,
-                            "id": f"call_{uuid.uuid4()}"
-                        }]
-                    )
-            except (json.JSONDecodeError, TypeError):
+                    
+                    parsed_tool_call = {
+                        "name": tool_call_data["name"],
+                        "args": params,
+                        "id": f"call_{uuid.uuid4()}"
+                    }
+                    print("📝 Manually parsing tool call from content...")
+                    ai_message = AIMessage(content="", tool_calls=[parsed_tool_call])
+            except (json.JSONDecodeError, TypeError, IndexError):
                 pass
-    
+
     return {"messages": state['messages'] + [ai_message]}
 
 def call_tool(state: AgentState):
@@ -140,29 +134,25 @@ def call_tool(state: AgentState):
     if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
         return {"messages": state['messages']}
 
+    # THE FIX: Revert to single-tool execution per turn
     tool_call = last_message.tool_calls[0]
     tool_name = tool_call['name']
     tool_args = tool_call['args']
     
     print(f"🛠️ Executing tool: {tool_name} with args {tool_args}")
 
-    # THE FIX: Add a validation layer before calling the calculator tool.
     if tool_name in ["add", "subtract"]:
         try:
-            # Ensure args are numbers before calling the tool
             a = float(tool_args.get("a", 0))
             b = float(tool_args.get("b", 0))
             result = calculator_client.call_tool(tool_name, a=a, b=b)
         except (ValueError, TypeError):
-            # If args are not numbers, send an error message back to the LLM
             result = f"Error: Invalid parameters for tool '{tool_name}'. Parameters must be numbers."
-    elif tool_name in calculator_client.tools:
-        # This is a fallback for other potential calculator tools
-        result = calculator_client.call_tool(tool_name, **tool_args)
     else:
         result = f"Error: Tool '{tool_name}' not found."
 
     tool_message = ToolMessage(content=str(result), tool_call_id=tool_call['id'])
+
     return {"messages": state['messages'] + [tool_message]}
 
 # --- Conditional Edge ---
