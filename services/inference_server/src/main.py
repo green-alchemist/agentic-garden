@@ -23,10 +23,9 @@ def create_chat_completion(
     )
     return {"choices": [{"message": {"role": "assistant", "content": response_text.strip()}}]}
 
-# --- 3. Create a standard FastAPI app and mount the MCP server ---
-# This is the robust, standard way to serve a sub-application.
-app = FastAPI(title="Agentic Garden MCP Gateway")
-app.mount("/mcp", mcp)
+# --- 3. FIX: Directly use the app from the FastMCP instance ---
+# This is a more direct and robust way to expose the MCP server.
+app = mcp.app
 
 # --- 4. Optional: Add a root health check to the main app ---
 @app.get("/")
