@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  mcp-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-server-ephemeral
+    stdin_open: true
+    tty: true
+    volumes:
+      - /tmp:/tmp  # For file operations
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-llm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - mcp-network
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    # Uncomment below for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  mcp-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.bridge
+    container_name: mcp-bridge
+    depends_on:
+      - mcp-server
+      - ollama
+    environment:
+      - MCP_SERVER_HOST=mcp-server
+      - OLLAMA_HOST=http://ollama:11434
+      - LLM_TYPE=ollama
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    networks:
+      - mcp-network
+    stdin_open: true
+    tty: true
+
+volumes:
+  ollama_data:
+
+networks:
+  mcp-network:
+    driver: bridge
