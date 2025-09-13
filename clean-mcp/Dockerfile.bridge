@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install aiohttp asyncio
+
+# Copy bridge/client code
+COPY mcp_client.py .
+COPY bridge_runner.py .
+
+# Make executable
+RUN chmod +x bridge_runner.py
+
+# Default command
+CMD ["python", "bridge_runner.py"]
